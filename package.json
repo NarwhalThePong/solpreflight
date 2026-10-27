@@ -1,0 +1,15 @@
+{
+  "name": "solpreflight",
+  "version": "0.1.0",
+  "description": "Checklist-driven pre-audit self-review report for Solidity projects. Offline, no compiler needed. Not an audit.",
+  "bin": { "solpreflight": "bin/solpreflight.js" },
+  "main": "src/scan.js",
+  "files": ["bin/", "src/", "README.md", "LICENSE", "CHANGELOG.md"],
+  "scripts": { "test": "node --test test/*.test.js", "sample": "node bin/solpreflight.js fixtures/vulnerable-vault -o docs/SAMPLE_REPORT.md" },
+  "keywords": ["solidity", "smart-contracts", "ethereum", "pre-audit", "checklist", "security-review", "static-analysis", "foundry", "hardhat", "evm"],
+  "repository": { "type": "git", "url": "git+https://github.com/NarwhalThePong/solpreflight.git" },
+  "bugs": { "url": "https://github.com/NarwhalThePong/solpreflight/issues" },
+  "license": "MIT",
+  "engines": { "node": ">=18" },
+  "dependencies": {}
+}
