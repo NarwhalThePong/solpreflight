@@ -96,3 +96,7 @@ npm run sample   # regenerate docs/SAMPLE_REPORT.md
 ## License
 
 MIT
+
+## Related
+
+A printable 66-item pre-audit checklist, scoring sheet and scope/known-issues/threat-model templates are available as a separate paid pack from the same author: [Smart Contract Pre-Audit Review Pack ($19)](https://payhip.com/b/G5agO). The scanner is free and open source on its own, and neither one is an audit or a security guarantee.
