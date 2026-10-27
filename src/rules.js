@@ -23,8 +23,24 @@ const isEntry = fn => fn.visibility === 'public' || fn.visibility === 'external'
 const isMut = fn => fn.mutability === 'nonpayable' || fn.mutability === 'payable';
 const ACCESS_MOD = /^(only\w*|auth|requiresAuth|restricted|whenNotPaused|initializer|reinitializer|onlyInitializing|onlyRole|onlyOwner|onlyProxy|ownerOnly|adminOnly|governance\w*|isAuthorized|authorized)$/i;
 const hasAccessMod = fn => fn.modifiers.some(m => ACCESS_MOD.test(m) && !/^whenNotPaused$/i.test(m));
-const inlineAuth = body => /(require|if)\s*\([^;]*msg\.sender\s*(==|!=)|_checkOwner\s*\(|_checkRole\s*\(|hasRole\s*\([^)]*msg\.sender|_authorize\w*\(|_onlyOwner\s*\(|revert\s+\w*Unauthori[sz]ed/.test(body);
+const inlineAuth = body => /(require|if)\s*\([^;]*(msg\.sender\s*(==|!=)|(==|!=)\s*msg\.sender\b|\w+\[[^\]]+\]\[\s*msg\.sender\s*\])|_checkOwner\s*\(|_checkRole\s*\(|hasRole\s*\([^)]*msg\.sender|_authorize\w*\(|_onlyOwner\s*\(|revert\s+\w*Unauthori[sz]ed/.test(body);
 const PRIV_NAME = /^(set|update|change|withdraw|sweep|rescue|upgrade|mint|burn|pause|unpause|emergency|kill|transferOwnership|grant|revoke|configure|add|remove)/i;
+// Writes that only touch storage keyed by the caller (balances[msg.sender] = ...) are self-scoped.
+const SENDER_KEYED = /\[\s*msg\.sender\s*\]/;
+// ERC-4626 / ERC-20 user entry points implemented as overrides are open by design.
+const STD_USER_FN = /^(deposit|mint|withdraw|redeem|transfer|transferFrom|approve)$/;
+const isStdUserFn = (fn, c) => STD_USER_FN.test(fn.name) && (/\boverride\b/.test(fn.header || '') || /ERC4626|ERC20/.test(c.inherits.join(' '))) && fn.params.split(',').filter(x => x.trim()).length >= 2;
+// Parse "type [location] name" params into [{type, name}]
+const paramList = fn => fn.params.split(',').map(x => x.trim().split(/\s+/)).filter(x => x[0]).map(x => ({ type: x[0], name: x[x.length - 1] }));
+function loopBodies(fn) {
+  const out = []; const re = /\b(for|while)\s*\([^)]*\)\s*\{/g; let m;
+  while ((m = re.exec(fn.body))) {
+    const open = m.index + m[0].length - 1;
+    let d = 0, end = open; for (let k = open; k < fn.body.length; k++) { if (fn.body[k] === '{') d++; else if (fn.body[k] === '}') { d--; if (!d) { end = k; break; } } }
+    out.push({ idx: m.index, text: fn.body.slice(open, end) });
+  }
+  return out;
+}
 const STATE_WRITE = /(^|[^=!<>])=(?!=)|\+\+|--|\+=|-=|\.push\(|\.pop\(|delete\s|\bcall\s*[{(]|\.transfer\(|\.send\(|selfdestruct|_mint\(|_burn\(/;
 
 const rules = [
@@ -33,7 +49,7 @@ const rules = [
     id: 'AC-01', category: 'Access control', title: 'State-changing public/external function with no access modifier', priority: 'medium',
     why: 'Functions anyone can call that change state are the main attack surface. Many are intentionally open (deposit, swap), but each one should be a conscious decision.',
     verify: 'For each hit, confirm the function is meant to be callable by anyone, or add a modifier / msg.sender check. List intentional open functions in your scope notes.',
-    check: f => eachFn(f, fn => isEntry(fn) && isMut(fn) && !['constructor', 'receive', 'fallback'].includes(fn.name) && !hasAccessMod(fn) && !inlineAuth(fn.body) && STATE_WRITE.test(fn.body) && PRIV_NAME.test(fn.name)
+    check: f => eachFn(f, (fn, c) => isEntry(fn) && isMut(fn) && !['constructor', 'receive', 'fallback'].includes(fn.name) && !hasAccessMod(fn) && !inlineAuth(fn.body) && STATE_WRITE.test(fn.body) && PRIV_NAME.test(fn.name) && !SENDER_KEYED.test(fn.body) && !isStdUserFn(fn, c)
       ? { line: fn.line, note: `${fn.contract}.${fn.name}() has a privileged-sounding name and no access check` } : null),
   },
   {
@@ -48,7 +64,7 @@ const rules = [
     verify: 'Confirm each listed function has onlyOwner/onlyRole or an equivalent check. Functions that only touch the caller\'s own balance (balances[msg.sender]) are skipped.',
     check: f => eachFn(f, (fn, c) => {
       const owned = /Ownable|AccessControl|Auth|Owned/.test(c.inherits.join(' ')) || /\bowner\b|onlyOwner|onlyRole/.test(c.body);
-      return owned && isEntry(fn) && isMut(fn) && /^(set|withdraw|upgrade|sweep|rescue|emergency|mint)/i.test(fn.name) && !hasAccessMod(fn) && !inlineAuth(fn.body) && !/\[\s*msg\.sender\s*\]/.test(fn.body)
+      return owned && isEntry(fn) && isMut(fn) && /^(set|withdraw|upgrade|sweep|rescue|emergency|mint)/i.test(fn.name) && !hasAccessMod(fn) && !inlineAuth(fn.body) && !SENDER_KEYED.test(fn.body) && !isStdUserFn(fn, c)
         ? { line: fn.line, note: `${fn.contract}.${fn.name}() in an owner-managed contract has no access check` } : null;
     }),
   },
@@ -116,12 +132,12 @@ const rules = [
     check: f => eachFn(f, fn => {
       if (fn.modifiers.some(m => /nonReentrant|lock|noReentr/i.test(m))) return null;
       const b = fn.body;
-      const call = b.search(/\.call\s*\{\s*value|\.call\s*\.value\s*\(|\.transfer\s*\(\s*\w+\s*\)\s*;|\.safeTransfer(From)?\s*\(/);
+      const call = b.search(/\b_safeMint\s*\(|\.call\s*\{\s*value|\.call\s*\.value\s*\(|\.transfer\s*\(\s*\w+\s*\)\s*;|\.safeTransfer(From)?\s*\(/);
       if (call < 0) return null;
       const after = b.slice(call);
       const stmtEnd = after.indexOf(';');
       const rest = after.slice(stmtEnd + 1);
-      return /\b\w+(\[[^\]]+\])+\s*(-=|\+=|=(?!=))|\b(balance|balances|shares|debt|total\w*|amount\w*)\s*(-=|\+=|=(?!=))|\bdelete\s/.test(rest)
+      return /\b\w+(\[[^\]]+\])+(\.\w+)*\s*(-=|\+=|=(?!=))|\b(balance|balances|shares|debt|total\w*|amount\w*)\s*(-=|\+=|=(?!=))|\bdelete\s/.test(rest)
         ? { line: fnLine(f, fn, call), note: `${fn.contract}.${fn.name}(): state written after external call, no nonReentrant` } : null;
     }),
   },
@@ -129,13 +145,39 @@ const rules = [
     id: 'EX-03', category: 'External calls', title: 'Unchecked ERC20 transfer/transferFrom return value', priority: 'medium',
     why: 'Some tokens (e.g. USDT) return no value or false instead of reverting. Plain transfer() may silently fail or revert unexpectedly.',
     verify: 'Use SafeERC20 safeTransfer/safeTransferFrom, or check the boolean return.',
-    check: f => grepLines(f, /\.(transfer|transferFrom)\s*\(\s*[^)]*,/, l => !/require\s*\(|=\s*\w*\.(transfer|transferFrom)|if\s*\(|safeTransfer|return\s/.test(l) && !/payable\s*\(/.test(l)),
+    check: f => grepLines(f, /\.(transfer|transferFrom)\s*\(\s*[^)]*,/, (l, i) => !/require\s*\(|=\s*\w*\.(transfer|transferFrom)|if\s*\(|safeTransfer|return\s/.test(l) && !/payable\s*\(/.test(l)
+      && !/(require|assert|if)\s*\(\s*$|=\s*$/.test(f.cleanLines[i - 1] || '')),
   },
   {
     id: 'EX-04', category: 'External calls', title: 'approve() to non-zero amount (approval race / USDT-style tokens)', priority: 'low',
     why: 'Changing a non-zero allowance to another non-zero value can be front-run; some tokens revert unless allowance is first set to 0.',
     verify: 'Use forceApprove / safeIncreaseAllowance, or set to 0 first.',
     check: f => grepLines(f, /\.approve\s*\(\s*[^,]+,\s*(?!0\s*\))[^)]+\)/, l => !/function\s+approve/.test(l)),
+  },
+  {
+    id: 'EX-05', category: 'External calls', title: 'Arbitrary external call with caller-supplied target and calldata', priority: 'high',
+    why: 'If callers choose both the target and the calldata, they can make the contract call any token\'s transferFrom and spend approvals users granted to it.',
+    verify: 'Restrict targets to an allowlist, or decode and validate the calldata; never hold user approvals in a contract that forwards arbitrary calls.',
+    check: f => eachFn(f, fn => {
+      if (!isEntry(fn) || hasAccessMod(fn)) return null;
+      const ps = paramList(fn);
+      const addrs = ps.filter(p => /^address/.test(p.type)).map(p => p.name), datas = ps.filter(p => /^bytes$/.test(p.type)).map(p => p.name);
+      const re = /\b(\w+)\.call\s*(\{[^}]*\})?\s*\(\s*(\w+)\s*\)/g; let m; const out = [];
+      while ((m = re.exec(fn.body))) if (addrs.includes(m[1]) && datas.includes(m[3])) out.push({ line: fnLine(f, fn, m.index), note: `${fn.contract}.${fn.name}(): ${m[1]}.call(${m[3]}) with both from the caller` });
+      return out;
+    }),
+  },
+  {
+    id: 'EX-06', category: 'External calls', title: 'Swap with minimum output hardcoded to 0', priority: 'high',
+    why: 'A swap that accepts any output amount can be sandwiched for most of its value.',
+    verify: 'Pass a caller-supplied or oracle-derived minimum output.',
+    check: f => grepLines(f, /\.(swap\w*|exactInput\w*)\s*\(\s*[^,;()]+,\s*0\s*,|amountOutMin(imum)?\s*:\s*0\b/),
+  },
+  {
+    id: 'EX-07', category: 'External calls', title: 'block.timestamp passed as a swap/liquidity deadline', priority: 'medium',
+    why: 'A deadline of block.timestamp is always satisfied, so a pending transaction can be held and executed later at a worse price.',
+    verify: 'Take the deadline as a caller-supplied parameter.',
+    check: f => grepLines(f, /\.(swap\w*|addLiquidity\w*|removeLiquidity\w*|exactInput\w*|exactOutput\w*)\s*\([^;]*block\.timestamp|deadline\s*:\s*block\.timestamp/),
   },
   // ---------- Oracles ----------
   {
@@ -151,8 +193,12 @@ const rules = [
     check: f => eachFn(f, fn => {
       const i = fn.body.search(/\.latestRoundData\s*\(/);
       if (i < 0) return null;
-      const stale = /updatedAt|block\.timestamp\s*-|heartbeat|STALE|stale/i.test(fn.body);
-      const pos = /(answer|price)\w*\s*>\s*0|(answer|price)\w*\s*<=\s*0|>\s*int256\(0\)/i.test(fn.body);
+      // Include bodies of internal/private helpers in the same file that this function calls (one level).
+      const helpers = [];
+      for (const c of f.contracts) for (const h of c.functions) if (h !== fn && h.hasBody && /internal|private/.test(h.visibility) && new RegExp(`\\b${h.name}\\s*\\(`).test(fn.body)) helpers.push(h.body);
+      const scope = [fn.body, ...helpers].join('\n');
+      const stale = /updatedAt|block\.timestamp\s*-|heartbeat|STALE|stale/i.test(scope);
+      const pos = /(answer|price)\w*\s*>\s*0|(answer|price)\w*\s*<=\s*0|>\s*int256\(0\)/i.test(scope) || (helpers.length > 0 && /\b\w+\s*(>\s*0|<=\s*0)\b/.test(helpers.join('\n')));
       return stale && pos ? null : { line: fnLine(f, fn, i), note: `${fn.contract}.${fn.name}(): missing ${[!stale && 'staleness', !pos && 'price > 0'].filter(Boolean).join(' and ')} check` };
     }),
   },
@@ -211,6 +257,13 @@ const rules = [
     verify: 'For each conversion, write down which side benefits from rounding and test edge amounts (1 wei).',
     check: f => grepLines(f, /(shares|assets|supply)\w*\s*[\/*][^;]*\/|mulDiv\s*\(/i),
   },
+  {
+    id: 'MA-05', category: 'Math', title: 'Share math with no virtual offset (first-depositor inflation)', priority: 'medium',
+    why: 'With no virtual shares/assets or minimum first deposit, the first depositor can donate assets to inflate the share price and round later deposits down to zero shares.',
+    verify: 'Add a virtual offset (e.g. OpenZeppelin ERC4626 _decimalsOffset), mint dead shares, or enforce a minimum first deposit; test a 1-wei deposit followed by a donation.',
+    check: f => /_decimalsOffset|VIRTUAL_|virtualShares|virtualAssets|DEAD_SHARES|MINIMUM_LIQUIDITY|MIN_DEPOSIT|MIN_SHARES/i.test(f.clean) ? []
+      : grepLines(f, /\*\s*(totalSupply|_totalSupply|totalShares)\w*(\s*\(\s*\))?\s*\/|mulDiv\s*\([^,;]+,\s*(totalSupply|_totalSupply|totalShares)\w*(\s*\(\s*\))?\s*,/),
+  },
   // ---------- Signatures ----------
   {
     id: 'SG-01', category: 'Signatures', title: 'ecrecover without zero-address check', priority: 'high',
@@ -241,6 +294,21 @@ const rules = [
       const i = fn.body.search(/\becrecover\s*\(/);
       return i >= 0 && !/0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A0/i.test(fn.body) ? { line: fnLine(f, fn, i), note: 'no low-s check' } : null;
     }),
+  },
+  {
+    id: 'SG-04', category: 'Signatures', title: 'keccak256(abi.encodePacked()) over two or more dynamic types', priority: 'medium',
+    why: 'Packed encoding of adjacent dynamic values is ambiguous ("a"+"bc" == "ab"+"c"), so different inputs can hash to the same value (SWC-133).',
+    verify: 'Use abi.encode, or ensure at most one dynamic argument.',
+    check: f => {
+      const dyn = new Set(); const re = /\b(string|bytes|[\w.]+\[\])\s+(memory\s+|calldata\s+|storage\s+)?(public\s+|private\s+|internal\s+|immutable\s+)*(\w+)/g; let m;
+      while ((m = re.exec(f.clean))) dyn.add(m[4]);
+      const hits = []; const kr = /keccak256\s*\(\s*abi\.encodePacked\s*\(([^;]*?)\)\s*\)/g;
+      while ((m = kr.exec(f.clean))) {
+        const args = m[1].split(',').map(a => a.trim());
+        if (args.filter(a => dyn.has(a)).length >= 2) hits.push({ line: lineOf(f.clean, m.index), note: `dynamic args: ${args.filter(a => dyn.has(a)).join(', ')}` });
+      }
+      return hits;
+    },
   },
   // ---------- Admin surface ----------
   {
@@ -302,6 +370,12 @@ const rules = [
       }
       return out;
     }),
+  },
+  {
+    id: 'DS-03', category: 'Denial of service', title: 'msg.value read inside a loop', priority: 'high',
+    why: 'msg.value is the same on every iteration, so the same ETH can be counted more than once.',
+    verify: 'Read msg.value once, split or track the remaining amount, and check the total spent.',
+    check: f => eachFn(f, fn => loopBodies(fn).filter(l => /\bmsg\.value\b/.test(l.text)).map(l => ({ line: fnLine(f, fn, l.idx), note: `${fn.contract}.${fn.name}()` }))),
   },
   // ---------- Events ----------
   {

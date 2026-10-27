@@ -52,6 +52,9 @@ See [docs/SAMPLE_REPORT.md](docs/SAMPLE_REPORT.md) for output from the intention
 | EX-02 | high | External calls: External value call before state update (possible reentrancy) |
 | EX-03 | medium | External calls: Unchecked ERC20 transfer/transferFrom return value |
 | EX-04 | low | External calls: approve() to non-zero amount (approval race / USDT-style tokens) |
+| EX-05 | high | External calls: Arbitrary external call with caller-supplied target and calldata |
+| EX-06 | high | External calls: Swap with minimum output hardcoded to 0 |
+| EX-07 | medium | External calls: block.timestamp passed as a swap/liquidity deadline |
 | OR-01 | medium | Oracles: Deprecated latestAnswer() |
 | OR-02 | high | Oracles: latestRoundData without staleness or price > 0 check |
 | OR-03 | high | Oracles: Spot price from pool reserves / slot0 |
@@ -62,9 +65,11 @@ See [docs/SAMPLE_REPORT.md](docs/SAMPLE_REPORT.md) for output from the intention
 | MA-02 | info | Math: unchecked block |
 | MA-03 | medium | Math: Downcast to a smaller integer type |
 | MA-04 | info | Math: Rounding direction review (division in share/asset math) |
+| MA-05 | medium | Math: Share math with no virtual offset (first-depositor inflation) |
 | SG-01 | high | Signatures: ecrecover without zero-address check |
 | SG-02 | high | Signatures: Signature check without nonce / deadline / chainId |
 | SG-03 | medium | Signatures: Raw ecrecover (malleability) |
+| SG-04 | medium | Signatures: keccak256(abi.encodePacked()) over two or more dynamic types |
 | AD-01 | info | Admin surface: Privileged function inventory |
 | AD-02 | info | Admin surface: Pause / emergency functions |
 | AD-03 | low | Admin surface: Privileged setters without a timelock |
@@ -72,11 +77,12 @@ See [docs/SAMPLE_REPORT.md](docs/SAMPLE_REPORT.md) for output from the intention
 | RT-02 | info | Randomness / time: block.timestamp dependence |
 | DS-01 | medium | Denial of service: Loop over a storage array of unbounded length |
 | DS-02 | medium | Denial of service: External call inside a loop |
+| DS-03 | high | Denial of service: msg.value read inside a loop |
 | EV-01 | low | Events / hygiene: Privileged setter emits no event |
 | EV-02 | info | Events / hygiene: Floating pragma |
 | EV-03 | info | Events / hygiene: Missing SPDX license identifier |
 
-Each rule has a vulnerable and a safe test snippet in `test/cases.js`; the test suite checks it fires on the first and stays quiet on the second. That is the only claim made about detection: the rules match the patterns shown in the tests.
+Each rule has a vulnerable and a safe test snippet in `test/cases.js` (with extra pairs for known tricky patterns in `test/extra_cases.js`); the test suite checks it fires on the first and stays quiet on the second. That is the only claim made about detection: the rules match the patterns shown in the tests.
 
 ## Limitations
 

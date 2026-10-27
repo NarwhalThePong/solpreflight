@@ -69,7 +69,7 @@ function parseFile(src) {
       while ((mm = modRe.exec(hdrNoReturns))) if (!KEYWORDS.has(mm[1])) modifiers.push(mm[1]);
       let body = '', bodyStart = f.index + f[0].length, endIdx = bodyStart;
       if (f[5] === '{') { endIdx = matchBrace(clean, bodyStart - 1); body = clean.slice(bodyStart, endIdx); fRe.lastIndex = endIdx; }
-      c.functions.push({ name, params: f[3], visibility, mutability, modifiers, body, line: lineOf(clean, f.index), bodyOffset: bodyStart, hasBody: f[5] === '{', contract: c.name });
+      c.functions.push({ name, params: f[3], visibility, mutability, modifiers, body, header, line: lineOf(clean, f.index), bodyOffset: bodyStart, hasBody: f[5] === '{', contract: c.name });
     }
     contracts.push(c);
     if (kind !== 'interface') cRe.lastIndex = open + 1; // allow nested? contracts are not nested; keep simple

@@ -4,6 +4,7 @@ const assert = require('node:assert');
 const { analyzeSource } = require('../src/scan');
 const { rules } = require('../src/rules');
 const cases = require('./cases');
+const extra = require('./extra_cases');
 
 test('every rule has a test case', () => {
   for (const r of rules) assert.ok(cases[r.id], `missing case for ${r.id}`);
@@ -31,3 +32,13 @@ test('line numbers point at the hit', () => {
   const hit = analyzeSource(src).findings.find(f => f.rule === 'AC-02');
   assert.match(src.split('\n')[hit.line - 1], /tx\.origin/);
 });
+
+for (const [name, c] of Object.entries(extra)) {
+  test(`${name} fires on vulnerable snippet`, () => {
+    assert.ok(analyzeSource(c.bad, 'bad.sol').findings.some(f => f.rule === c.rule), `${c.rule} did not fire`);
+  });
+  test(`${name} stays quiet on safe snippet`, () => {
+    const hits = analyzeSource(c.good, 'good.sol').findings.filter(f => f.rule === c.rule);
+    assert.deepStrictEqual(hits, [], `${c.rule} false positive: ${JSON.stringify(hits)}`);
+  });
+}

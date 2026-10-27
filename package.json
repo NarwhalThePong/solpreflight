@@ -1,6 +1,6 @@
 {
   "name": "solpreflight",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Checklist-driven pre-audit self-review report for Solidity projects. Offline, no compiler needed. Not an audit.",
   "bin": { "solpreflight": "bin/solpreflight.js" },
   "main": "src/scan.js",

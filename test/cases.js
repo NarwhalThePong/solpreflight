@@ -148,4 +148,28 @@ module.exports = {
     bad: 'pragma solidity 0.8.24;\ncontract T {}\n',
     good: '// SPDX-License-Identifier: MIT\npragma solidity 0.8.24;\ncontract T {}\n',
   },
+  'EX-05': {
+    bad: W('function exec(address target, bytes calldata data) external { (bool ok,) = target.call(data); require(ok); }'),
+    good: W('address immutable router;\nconstructor(address r) { router = r; }\nfunction exec(bytes calldata data) external { (bool ok,) = router.call(data); require(ok); }'),
+  },
+  'EX-06': {
+    bad: W('IRouter router;\nfunction harvest(address[] calldata path, uint256 a) external { router.swapExactTokensForTokens(a, 0, path, address(this), block.timestamp); }'),
+    good: W('IRouter router;\nfunction harvest(address[] calldata path, uint256 a, uint256 minOut, uint256 deadline) external { router.swapExactTokensForTokens(a, minOut, path, address(this), deadline); }'),
+  },
+  'EX-07': {
+    bad: W('IRouter router;\nfunction swap(address[] calldata path, uint256 a, uint256 m) external { router.swapExactTokensForTokens(a, m, path, msg.sender, block.timestamp); }'),
+    good: W('IRouter router;\nfunction swap(address[] calldata path, uint256 a, uint256 m, uint256 deadline) external { router.swapExactTokensForTokens(a, m, path, msg.sender, deadline); }'),
+  },
+  'SG-04': {
+    bad: W('function id(string calldata a, string calldata b) public pure returns (bytes32) { return keccak256(abi.encodePacked(a, b)); }'),
+    good: W('function id(string calldata a, string calldata b) public pure returns (bytes32) { return keccak256(abi.encode(a, b)); }'),
+  },
+  'DS-03': {
+    bad: W('mapping(address=>uint256) bal;\nfunction buyMany(address[] calldata to) external payable { for (uint256 i; i < to.length; i++) { bal[to[i]] += msg.value; } }'),
+    good: W('mapping(address=>uint256) bal;\nfunction buyMany(address[] calldata to) external payable { uint256 each = msg.value / to.length; for (uint256 i; i < to.length; i++) { bal[to[i]] += each; } }'),
+  },
+  'MA-05': {
+    bad: W('IERC20 asset; uint256 totalSupply;\nfunction deposit(uint256 assets) external returns (uint256 shares) { uint256 ta = asset.balanceOf(address(this)); shares = totalSupply == 0 ? assets : assets * totalSupply / ta; totalSupply += shares; }'),
+    good: W('IERC20 asset; uint256 totalSupply; uint256 totalAssets_;\nfunction deposit(uint256 assets) external returns (uint256 shares) { shares = assets * (totalSupply + 1e3) / (totalAssets_ + 1); totalSupply += shares; totalAssets_ += assets; }'),
+  },
 };
