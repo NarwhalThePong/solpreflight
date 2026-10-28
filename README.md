@@ -106,3 +106,11 @@ MIT
 ## Related
 
 A printable 66-item pre-audit checklist, scoring sheet and scope/known-issues/threat-model templates are available as a separate paid pack from the same author: [Smart Contract Pre-Audit Review Pack ($19)](https://payhip.com/b/G5agO). The scanner is free and open source on its own, and neither one is an audit or a security guarantee.
+
+## Other free tools from the same author
+
+- [sorobanpreflight](https://github.com/NarwhalThePong/sorobanpreflight): a pre-audit checklist scanner for Soroban (Rust) contracts.
+- [foundry-invariant-kit](https://github.com/NarwhalThePong/foundry-invariant-kit): generates Foundry invariant and fuzz test scaffolds for ERC-20 and ERC-4626 contracts (lending is experimental).
+- [upgrade-safety-diff](https://github.com/NarwhalThePong/upgrade-safety-diff): compares two proxy storage layouts and flags layout-level upgrade hazards. It checks layout only and does not prove an upgrade is safe.
+
+Each is a self-review aid, not an audit or a guarantee.
