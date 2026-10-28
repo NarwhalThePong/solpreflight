@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 - unreleased
+## 0.2.0 - 2026-10-27
 
 - New rules (42 total): EX-05 arbitrary external call with caller-supplied target and calldata, EX-06 swap with minimum output hardcoded to 0, EX-07 block.timestamp as a swap/liquidity deadline, SG-04 keccak256(abi.encodePacked()) over two or more dynamic types, DS-03 msg.value read inside a loop, MA-05 share math with no virtual offset (first-depositor inflation).
 - AC-01: accepts `x == msg.sender` with msg.sender on the right and `isAuthorized[x][msg.sender]` checks; skips functions that only write msg.sender-keyed storage; skips ERC-4626/ERC-20 user functions (deposit, mint, withdraw, redeem, transfer, approve) implemented as overrides or in an ERC4626/ERC20 contract.
